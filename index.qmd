@@ -1,8 +1,310 @@
 ---
-title: "Test"
+title: "Reproducing MLB Baseball Savant"
+author: "[David Dalpiaz](https://daviddalpiaz.org)"
+date: "2024-11-01"
 format:
   html:
     embed-resources: true
+    fig-align: center
+    df-print: paged
+    callout-appearance: minimal
 ---
 
-Test
+The **goal** of this tutorial is to recreate several graphics from Major League Baseball's [Savant](https://baseballsavant.mlb.com/), which utilizes [Statcast](https://en.wikipedia.org/wiki/Statcast) data. Specifically, we will recreate three visualizations for Gerrit Cole.
+
+- [Gerrit Cole | Baseball Savant](https://baseballsavant.mlb.com/savant-player/gerrit-cole-543037)
+
+::: {.callout-note}
+Complete materials for the workshop can be found on GitHub:
+
+- Part One: [`daviddalpiaz/cmsac-2024`](https://github.com/daviddalpiaz/cmsac-2024/)
+- Part Two: [`bayesball/Workshop`](https://github.com/bayesball/Workshop/tree/master/Pittsburgh%20-%20November%202024)
+:::
+
+This tutorial makes heavy use of `dplyr` and `ggplot2`. Documentation, including cheat sheets, can be found at:
+
+- [`dplyr` Documentation](https://dplyr.tidyverse.org/)
+- [`ggplot2` Documentation](https://ggplot2.tidyverse.org/)
+
+## Setup
+
+```{r}
+# list of required packages
+packages = c("ggplot2", "dplyr", "readr", "ggdensity", "ggforce")
+
+# install packages if not already installed
+for (package in packages) {
+    if (!requireNamespace(package, quietly = TRUE)) {
+        install.packages(package)
+    }
+}
+```
+
+```{r}
+#| message: false
+# load required packages
+library("ggplot2")
+library("dplyr")
+library("readr")
+library("ggdensity")
+library("ggforce")
+```
+
+```{r}
+#| message: false
+# load data
+cole2024 = read_csv("https://daviddalpiaz.github.io/cmsac-2024/data/cole2024.csv")
+```
+
+- [Statcast Search](https://baseballsavant.mlb.com/statcast_search)
+- [Statcast Search CSV Documentation](https://baseballsavant.mlb.com/csv-docs)
+- [Statcast Data Reference | *Analyzing Baseball Data with R*](https://beanumber.github.io/abdwr3e/C_statcast.html)
+- [`saberpowers/sabRmetrics`](https://github.com/saberpowers/sabRmetrics)
+
+```{r}
+#| column: page
+# preview data
+cole2024
+```
+
+```{r}
+#| column: page
+# preview columns of interest
+cole2024 |>
+    select(
+        pitch_type,
+        pitch_name,
+        release_speed,
+        release_spin_rate,
+        plate_x,
+        plate_z,
+        pfx_x,
+        pfx_z
+    )
+```
+
+```{r}
+# calculate mix pitch and pitch summary statistics
+cole2024_stats = {
+    cole2024 |>
+        group_by(pitch_type, pitch_name) |>
+        summarise(prop = n() / nrow(cole2024),
+                  ave_velo = mean(release_speed),
+                  ave_spin = mean(release_spin_rate),
+                  .groups = "drop"
+        ) |>
+        arrange(desc(prop))
+}
+cole2024_stats
+```
+
+## Pitch Velocity Distribution
+
+![](img/velocity.png)
+
+### Starter Code and Graphic
+
+```{r}
+ggplot(cole2024) +
+    aes(x = release_speed) +
+    geom_density()
+```
+
+### Full Code and Final Graphic
+
+```{r}
+#| code-fold: true
+#| code-summary: "Full Solution Code"
+#| eval: false
+
+ggplot(cole2024) +
+    aes(x = release_speed,
+        y = 100 * after_stat(count) / nrow(cole2024),
+        fill = pitch_type
+    ) +
+    geom_density(alpha = 0.5) +
+    theme_bw() +
+    xlim(c(70, 100)) +
+    scale_y_continuous(
+        limits = c(0, 13),
+        breaks = setNames(
+            seq(0, 12, by = 2),
+            paste0(seq(0, 12, by = 2), "%"))
+    ) +
+    xlab("Pitch Speed (mph)") +
+    ylab("Frequency of Speed") +
+    labs(fill = "Pitch Type")
+```
+
+## Pitch Arsenal
+
+![](img/arsenal.png)
+
+### Starter Code and Graphic
+
+```{r}
+# get pitch types in order of frequency
+cole2024_stats |>
+    pull(pitch_type) |>
+    dput()
+
+# make pitch types a factor ordered by frequency
+cole2024$pitch_type = factor(
+    cole2024$pitch_type,
+    levels = c("FF", "KC", "FC", "SL", "CH", "SI"))
+```
+
+- [Where Is the Strike Zone? | *Analyzing Baseball Data with R*](https://beanumber.github.io/abdwr3e/07-framing.html#where-is-the-strike-zone)
+
+```{r}
+# create geom to visualize the strikezone
+geom_strikezone = function(sz_top = 3.8, sz_bot = 1.1) {
+    plate_width = 17 + 2 * (9 / pi)
+    sz_left = -(plate_width / 2) / 12
+    sz_right = (plate_width / 2) / 12
+    strikezone = data.frame(
+        x = c(sz_left, sz_left, sz_right, sz_right, sz_left),
+        y = c(sz_bot, sz_top, sz_top, sz_bot, sz_bot)
+    )
+    geom_path(
+        mapping = aes(.data$x, .data$y),
+        data = strikezone,
+        linewidth = 0.5,
+        linetype = 1,
+        color = "black"
+    )
+}
+```
+
+```{r}
+cole2024 |>
+    ggplot() +
+        aes(x = plate_x, y = plate_z) +
+        geom_point(
+            aes(color = pitch_type),
+            alpha = 0.6
+        ) + 
+        geom_strikezone()
+```
+
+### Full Code and Final Graphic
+
+```{r}
+#| code-fold: true
+#| code-summary: "Full Solution Code"
+#| eval: false
+location_plot = {
+    ggplot(cole2024) +
+        aes(x = plate_x, y = plate_z) +
+        xlim(c(-3, 3)) +
+        ylim(c(-2, 6)) +
+        xlab("") +
+        ylab("") +
+        theme_bw() +
+        coord_fixed() +
+        facet_wrap(vars(pitch_type))
+}
+
+location_plot +
+    geom_hdr(
+        method = method_kde(h = 0.75),
+        probs = c(0.90, 0.70, 0.50, 0.40, 0.30, 0.20),
+        show.legend = FALSE,
+        aes(fill = after_stat(probs)),
+        alpha = 0.75
+    )  +
+    scale_fill_brewer(
+        palette = "RdBu",
+        direction = -1
+    ) +
+    geom_strikezone()
+
+location_plot +
+    geom_point(
+        aes(fill = pitch_type),
+        alpha = 1,
+        show.legend = FALSE,
+        pch = 21
+    ) +
+    geom_strikezone()
+```
+
+## Movement Profile
+
+![](img/movement.png)
+
+### Starter Code and Graphic
+
+```{r}
+#| column: page
+cole2024 |>
+    mutate(hb = 12 * pfx_x) |>
+    mutate(ivb = 12 * pfx_z) |>
+    ggplot() +
+        aes(x = hb,
+            y = ivb,
+            colour = pitch_type
+        ) +
+        geom_point(alpha = 0.75)
+```
+
+- [What is Induced Vertical Break? | Reddit](https://old.reddit.com/r/Sabermetrics/comments/174ebgo/deleted_by_user/)
+- [The Physics of Baseball | Alan Nathan](https://baseball.physics.illinois.edu/)
+
+### Full Code and Final Graphic
+
+```{r}
+#| code-fold: true
+#| code-summary: "Full Solution Code"
+#| eval: false
+set.seed(2024)
+cole2024 |>
+    mutate(hb = 12 * pfx_x) |>
+    mutate(ivb = 12 * pfx_z) |>
+    slice_sample(n = 200) |>
+    ggplot() +
+        aes(x = hb,
+            y = ivb,
+            colour = pitch_type
+        ) +
+        geom_hline(yintercept = 0, linewidth = 0.1) +
+        geom_vline(xintercept = 0, linewidth = 0.1) +
+        geom_circle(
+            data = data.frame(
+                x0 = 0,
+                y0 = 0,
+                r = 6 * 1:4,
+                lt = factor(c(2, 1, 2, 1))
+            ),
+            mapping = aes(
+                x0 = x0,
+                y0 = y0,
+                r = r,
+                linetype = lt
+            ),
+            inherit.aes = FALSE,
+            linewidth = 0.25,
+            show.legend = FALSE
+        ) +
+        geom_point(
+            alpha = 1,
+            size = 2
+        ) +
+        geom_text(
+            data = data.frame(
+                x = c(-22, -16, -10, -4),
+                y = 1,
+                text = c("24\"", "18\"", "12\"", "6\"")
+            ),
+            mapping = aes(x = x, y = y, label = text),
+            inherit.aes = FALSE,
+            family = "mono"
+        ) +
+        scale_x_continuous(limits = c(-24, 24), breaks = 12 * -2:2) +
+        scale_y_continuous(limits = c(-24, 24), breaks = 12 * -2:2) +
+        theme_void() +
+        coord_fixed() +
+        xlab("Horizontal Break (Inches)") +
+        ylab("Induced Vertical Break (Inches)") +
+        labs(colour = "Pitch Type")
+```
