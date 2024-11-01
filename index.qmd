@@ -236,7 +236,6 @@ location_plot +
 ### Starter Code and Graphic
 
 ```{r}
-#| column: page
 cole2024 |>
     mutate(hb = 12 * pfx_x) |>
     mutate(ivb = 12 * pfx_z) |>
