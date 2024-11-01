@@ -115,8 +115,6 @@ ggplot(cole2024) +
 ```{r}
 #| code-fold: true
 #| code-summary: "Full Solution Code"
-#| eval: false
-
 ggplot(cole2024) +
     aes(x = release_speed,
         y = 100 * after_stat(count) / nrow(cole2024),
@@ -192,7 +190,6 @@ cole2024 |>
 ```{r}
 #| code-fold: true
 #| code-summary: "Full Solution Code"
-#| eval: false
 location_plot = {
     ggplot(cole2024) +
         aes(x = plate_x, y = plate_z) +
@@ -255,10 +252,9 @@ cole2024 |>
 ```{r}
 #| code-fold: true
 #| code-summary: "Full Solution Code"
-#| eval: false
 set.seed(2024)
 cole2024 |>
-    mutate(hb = 12 * pfx_x) |>
+    mutate(hb = -12 * pfx_x) |>
     mutate(ivb = 12 * pfx_z) |>
     slice_sample(n = 200) |>
     ggplot() +
